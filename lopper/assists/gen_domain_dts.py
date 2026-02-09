@@ -1095,6 +1095,29 @@ def xlnx_generate_zephyr_domain_dts(tgt_node, sdt, options):
         axi_wdt_nodes = []
         for node in root_sub_nodes:
             if node.parent:
+                # Process IPI nodes (which are under /axi, not amba_pl)
+                # Handle IPI mailbox nodes regardless of parent (they're PS peripherals under /axi)
+                if node.propval("compatible") != [''] and any(version in node["compatible"].value for version in ("xlnx,versal-ipi-mailbox", "xlnx,versal-ipi-dest-mailbox")):
+                    ipi_schema_entry = [value for key,value in schema.items() if key in node["compatible"].value]
+                    # Skip already converted nodes
+                    if any(version in node["compatible"].value for version in ("vnd,mbox-consumer", "xlnx,mbox-versal-ipi-mailbox", "xlnx,mbox-versal-ipi-dest-mailbox")):
+                        continue
+                    # Filter properties FIRST (using OLD compatible string)
+                    if ipi_schema_entry:
+                        required_prop = ipi_schema_entry[0]["required"]
+                        prop_list = list(node.__props__.keys())
+                        valid_alias_proplist.append(node.name)
+                        for prop in prop_list:
+                            if prop not in required_prop:
+                                node.delete(prop)
+                    # Convert compatible string AFTER filtering
+                    if "xlnx,versal-ipi-mailbox" in node["compatible"].value:
+                        node["compatible"].value = ["xlnx,mbox-versal-ipi-mailbox"]
+                    elif "xlnx,versal-ipi-dest-mailbox" in node["compatible"].value:
+                        node["compatible"].value = ["xlnx,mbox-versal-ipi-dest-mailbox"]
+                        node.name = f"child@{hex(node.propval('reg')[1])[2:]}"
+                    continue  # Skip remaining processing for IPI nodes
+                # Process amba_pl nodes
                 if "amba_pl" in node.parent.name:
                     if node.propval("compatible") != ['']:
                         if node.propval('xlnx,ip-name') != ['']:
